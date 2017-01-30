@@ -1,0 +1,506 @@
+# Financial Contributions to Presidential Campaigns (Ohio State)
+Dataset: Financial Contributions to Presidential Campaigns (Ohio State)
+Time: 2016
+The reason to choose this dataset:
+Ohio is known as a swing state which could forecast the election result by the status of Ohio state.
+========================================================
+#### General R library and data loading
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+
+# Libraries for ploting data on the map
+#install.packages("plyr")
+#install.packages("ggmap")
+#install.packages("ggmap", type = "source")
+#install.packages("devtools")
+library(devtools)
+#install_github("dkahle/ggmap")
+#install.packages("zipcode")
+library(plyr)
+
+library(ggmap)
+library(zipcode)
+
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk.
+# This prevents the code from displaying in the knitted HTML output.
+# You should set echo=FALSE for all code chunks in your file.
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(gtable)
+library(grid)
+
+
+
+# install these if necessary
+#install.packages('GGally')
+#install.packages('scales')
+#install.packages('lattice')
+#install.packages('MASS')
+
+# load the ggplot graphics package and the others
+library(GGally)
+library(scales)
+library(memisc)
+
+
+# Load the package for loading online database
+library(data.table)
+library(stringr)
+
+library(reshape2)
+
+```
+
+```{r  Function: Party categorize function, echo=FALSE}
+rnParty <- function(x) {
+    if(is.na(x)){
+      NA
+    }else if(x == "Trump, Donald J." | 
+             x == "Santorum, Richard J." | 
+             x == "Cruz, Rafael Edward 'Ted'" |
+             x == "Walker, Scott" |
+             x == "Bush, Jeb" |
+             x == "Rubio, Marco" |
+             x == "Kasich, John R." |
+             x == "Carson, Benjamin S."|
+             x == "Paul, Rand"|
+             x == "Santorum, Richard J."|
+             x == "Fiorina, Carly"|
+             x == "Jindal, Bobby"|
+             x == "Huckabee, Mike"|
+             x == "Graham, Lindsey O."|
+             x == "Christie, Christopher J."|
+             x == "Perry, James R. (Rick)"|
+             x == "Pataki, George E."){
+      "R"
+    }else if(x == "Clinton, Hillary Rodham" | x == "Kaine, Tim"| x == "Lessig, Lawrence"| x == "O'Malley, Martin Joseph"){
+      "D"
+    }else{
+      "Other"
+    }
+}
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+oh_data <- read.csv(file = 'P00000001-OH.csv', row.names = NULL)
+oh_data <- subset(oh_data, select = -X)
+# Categorize with party data
+oh_data$party <- apply(oh_data['cand_nm'],1,rnParty)
+
+oh_data_without_refund <- subset(oh_data, contb_receipt_amt > 0)
+
+```
+
+
+## Univariate Plots Section
+```{r Univariate_Plots: summary of the dataset and know the length of some key attributes, echo=FALSE, message=FALSE, warning=FALSE}
+summary(oh_data)
+nrow(oh_data)
+# Length of key attributes
+length(unique(oh_data$cand_nm)) # unique candidate
+length(unique(oh_data$contbr_occupation))
+length(unique(oh_data$contbr_city))
+
+```
+
+```{r Univariate_Plots: The distribution of contribution amount, echo=FALSE, message=FALSE, warning=FALSE}
+
+a <- ggplot(oh_data, aes( x = contb_receipt_amt))
+
+a + geom_histogram(binwidth = 100, boundary = 0)
+
+
+# The distribution of contributed amount is wide and it seems to be skewed within the range of 0-500
+a + geom_histogram(binwidth = 100, boundary = 0) + # try to make a bin starting from 0
+    geom_vline(aes(xintercept=mean(contb_receipt_amt, na.rm=T)), color = "red", linetype = "dashed", size = 1) +
+    coord_cartesian(xlim = c(-100, 500)) # zooming to the area of amount from -100 to $500
+
+```
+
+```{r Univariate_Plots: The number of contributions by party, echo=FALSE, message=FALSE, warning=FALSE}
+# The number of contributions by candidate
+by_party <- group_by(oh_data, party)
+by_party <- dplyr::summarise(by_party, 
+                      count = n(),
+                      total_amount = sum(contb_receipt_amt))
+by_party <- arrange(by_party, desc(total_amount))
+by_party$pos <- (cumsum(by_party$total_amount) - (0.5*by_party$total_amount))
+by_party$percent <- (by_party$total_amount / sum(by_party$total_amount))
+
+library(scales)
+blank_theme <- theme_minimal()+
+  theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  panel.border = element_blank(),
+  panel.grid=element_blank(),
+  axis.ticks = element_blank(),
+  plot.title=element_text(size=14, face="bold")
+  )
+
+print(by_party)
+bar <- ggplot(by_party, aes(x= reorder(party, -percent), y = percent, fill = party)) +
+  geom_bar(stat = "identity", position = "dodge")
+
+bar
+
+```
+
+```{r Univariate_Plots : Top 10 cities with the most number of contributions, echo=FALSE, message=FALSE, warning=FALSE}
+tab <- table(oh_data_without_refund$contbr_city)
+tab_s <- sort(tab)
+top10 <- tail(names(tab_s), 10)
+d_s <- subset(oh_data, contbr_city %in% top10 )
+head(d_s$contbr_city, 15)
+d_s$contbr_city <- factor(d_s$contbr_city, levels = rev(top10))
+head(d_s$contbr_city, 15)
+
+# Top 10 cities with the most number of contributions
+g1 <- ggplot(d_s, aes(x = contbr_city)) +
+  geom_bar()+
+  theme_classic()
+
+g1
+```
+
+```{r Univariate_Plots: Top 10 cities with the most amount of contributions,echo=FALSE}
+# Top 10 cities with the most amount of contributions
+by_amount <- group_by(oh_data, contbr_city)
+city_by_amount <- dplyr::summarise(by_amount, 
+          total_amount = sum(contb_receipt_amt)) 
+city_by_amount <- arrange(city_by_amount, desc(total_amount))
+city_by_amount
+top_city <- head(city_by_amount, 10)
+top_city
+g2 <- ggplot(top_city, aes(x = reorder(contbr_city, -total_amount), y = total_amount)) +
+  geom_bar(stat = "identity")
+
+grid.arrange(g1, g2, nrow = 2)
+
+```
+
+
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+There are 164,475 obs in the Ohio dataset with 18 original varibles. For analysis purpose, I added 3 extra varibles (party, Month_Yr and weekday)
+
+### What is/are the main feature(s) of interest in your dataset?
+The main features in the data set are "contb_receipt_amt" and the factors influencing the amounts. I’d like to find out which features have the most impact on raising more contributed amounts and I'd like to provide a few suggestions for candidates in the future when running a election found-raising campaign. I suspect city, occupation and day of week matter.
+
+
+### What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
+Since 2016 American presidential election result has came out, it would be great to do comparison analysis between contributed amount data and the final voting result data. I downloaded the voting result data for analyzing the correlation between contributed amount and the voters in Ohio. (The analysis is covered in the next section.)
+
+### Did you create any new variables from existing variables in the dataset?
+Yes, I create 3 variables for further analysis. The 3 variables are listed below.
+1) Party: I categorized data into 3 categories(D, R, Other) based on candidate name
+2) Month_Yr: showing the contributed amount trend by month 
+3) weekday: analyzing if there is a huge difference between weekday and wweekend.
+
+
+### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+I enriched the Ohio dataset with Zipcode to visualize the contributed amount on Ohio map.(The analysis is conducted in multivariate plots section.)
+
+After merging with Ohio zipcode data from Zipcode library, I found there are 83 potential wrong zipcode data so I excluded them when I was plotting the contributed amount on the map. The reason why I excluded is that it is hard to identify the correct zipcode simply based on city names. 
+
+
+# Bivariate Plots Section
+```{r Bivariate_Plots: Coorelation matrix plot, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Load vote data from the online source
+vote_result <- fread("https://raw.githubusercontent.com/tonmcg/County_Level_Election_Results_12-16/master/2016_US_County_Level_Presidential_Results.csv")
+oh_vote <- subset(vote_result, state_abbr == "OH")
+simple_oh_vote <- oh_vote[, c(10,2,3,4)]
+
+# Clean Ohio vote data
+split_function <- str_split_fixed(simple_oh_vote$county_name, " ", 2)
+simple_oh_vote$county_name <- sapply(split_function, "[", 1)
+simple_oh_vote$county_name <- tolower(simple_oh_vote$county_name)
+
+#Merge vote data with contributed data
+by_city <- group_by(oh_data, contbr_city, party)
+by_city <- dplyr::summarise(by_city, 
+                     count = n(),
+                     total_amount = sum(contb_receipt_amt))
+by_city$contbr_city <- tolower(by_city$contbr_city)
+print(by_city)
+by_city.wide <- dcast(by_city, 
+                      contbr_city ~ party, 
+                      value.var = 'total_amount')
+by_city.wide[is.na(by_city.wide)] <- 0
+head(by_city.wide)
+
+
+New_by_city <- merge(by_city.wide, simple_oh_vote, by.x = 'contbr_city', by.y = 'county_name')
+
+
+colnames(New_by_city) <- c("contbr_city", "amount_D", "amount_Other", "amount_R", "votes_D","votes_R","total_votes")
+New_by_city$total_amount <- New_by_city$amount_D + New_by_city$amount_R + New_by_city$amount_Other
+head(New_by_city)
+
+ggpairs(New_by_city, axisLabels = 'internal',
+        cardinality_threshold = length(New_by_city$contbr_city))
+
+```
+
+
+```{r Bivariate_Plots: Month v.s. Contributed amount, echo=FALSE}
+oh_data$contb_receipt_dt <- as.Date(oh_data$contb_receipt_dt, "%d-%b-%y")
+oh_data$Month_Yr <- format (as.Date(oh_data$contb_receipt_dt, "%d-%b-%y"), "%Y-%m")
+oh_data$Month_Yr <- as.factor(oh_data$Month_Yr)
+oh_data$Day_Month <- format (as.Date(oh_data$contb_receipt_dt, "%d-%b-%y"), "%d")
+oh_data$Day_Month <- as.numeric(oh_data$Day_Month)
+
+by_month <- group_by(oh_data, Month_Yr)
+by_month <- summarise(by_month, 
+                      count = n(),
+                      amount = sum(contb_receipt_amt))
+
+ggplot(oh_data, aes(x = Day_Month, y = contb_receipt_amt, group = 1)) +
+  geom_line(stat = "summary", fun.y = sum)+
+  scale_x_continuous(breaks = 1:31)+
+  facet_wrap(~Month_Yr)
+
+
+
+```
+
+```{r Bivariate_Plots: the day of week v.s. Contributed amount,echo=FALSE}
+oh_data$contb_receipt_dt <- as.Date(oh_data$contb_receipt_dt,"%d-%b-%y")
+oh_data$weekday <- weekdays(as.Date(oh_data$contb_receipt_dt))
+
+oh_data$weekday <- factor(oh_data$weekday, levels= c("Monday", 
+    "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+
+by_weekday <- group_by(oh_data, weekday)
+by_weekday_sum <- summarise(by_weekday, 
+                        count = n(),
+                        amount = sum(contb_receipt_amt))
+by_weekday <- group_by(oh_data, weekday)
+by_weekday_mean <- summarise(by_weekday, 
+                        count = n(),
+                        amount = mean(contb_receipt_amt))
+
+w1 <- ggplot(by_weekday_sum, aes( x = weekday, y = amount, group =1)) +
+  labs(y = "Total amount")+
+  geom_bar(stat = "identity")+
+  ggtitle("Sum of contributed amount by weekday")
+
+w2 <- ggplot(by_weekday_mean, aes( x = weekday, y = amount, group =1)) +
+  labs(y = "Average amount")+
+  geom_bar(stat = "identity")+
+  ggtitle("Average of contributed amount by weekday")
+
+
+grid.arrange(w1, w2, nrow =2)
+```
+
+```{r Bivariate_Plots: analysis by occupation - we may try to increase the average amount, echo=FALSE}
+by_occupation <- group_by(oh_data, contbr_occupation)
+by_occupation_amount <- summarise(by_occupation,
+                               count = n(),
+                               average_amount = mean(contb_receipt_amt),
+                               total = sum(contb_receipt_amt)
+)
+
+ordered_data <- arrange(by_occupation_amount, desc(count))
+top10_occupation <- head(ordered_data, 10)
+
+ggplot(top10_occupation, aes(x = reorder(contbr_occupation, -count), y = count))+
+  geom_bar(stat = "identity")+
+  geom_line(data = top10_occupation, aes(y = average_amount), colour = "blue", group =1 )+
+  scale_y_continuous(sec.axis = sec_axis(~./400, name = "Average Amount"))
+
+
+# two plots
+p1 <- ggplot(top10_occupation, aes(x = reorder(contbr_occupation, -count), y = count)) + geom_bar(stat = "identity")  + theme_bw()
+p2 <- ggplot(top10_occupation, aes(x = reorder(contbr_occupation, -count), y = count)) +
+geom_line(data = top10_occupation, aes(y = average_amount), colour = "blue", group =1 ) + theme_bw() %+replace% 
+  theme(panel.background = element_rect(fill = NA))
+
+
+# extract gtable
+g1 <- ggplot_gtable(ggplot_build(p1))
+g2 <- ggplot_gtable(ggplot_build(p2))
+
+# overlap the panel of 2nd plot on that of 1st plot
+pp <- c(subset(g1$layout, name == "panel", se = t:r))
+g <- gtable_add_grob(g1, g2$grobs[[which(g2$layout$name == "panel")]], pp$t, 
+    pp$l, pp$b, pp$l)
+
+# axis tweaks
+ia <- which(g2$layout$name == "axis-l")
+ga <- g2$grobs[[ia]]
+ax <- ga$children[[2]]
+ax$widths <- rev(ax$widths)
+ax$grobs <- rev(ax$grobs)
+ax$grobs[[1]]$x <- ax$grobs[[1]]$x - unit(1, "npc") + unit(0.15, "cm")
+g <- gtable_add_cols(g, g2$widths[g2$layout[ia, ]$l], length(g$widths) - 1)
+g <- gtable_add_grob(g, ax, pp$t, length(g$widths) - 1, pp$b)
+
+# draw it
+grid.draw(g)
+```
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
+I noticed that the relationship between distributed amount and the number of voters is not positively strong. It seems to have week relationship which is against my original assumption.
+
+### Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?
+When dicussing the relationship between the contributed amount and the toal voters, Republican party supporters show stronger correlation than Democratic party supporters.
+
+The correlation coefficient between contributed amount and voter numbers
+1)Republican party : 0.401
+2)Democratic party : 0.184
+
+The correlation coefficient is higher than the correlation coefficient of total contributed amount and total voter numbers in Ohio (which is 0.307)
+
+### What was the strongest relationship you found?
+The relationship between the total contributed amount and the contributed amount of Republican party is super relative (the correlation coefficient is 0.934) because the contributed amount from Republican party supporters accounts for ~60%. 
+
+However, this is not a proper pair to check the relationship because these 2 factors are not independent. 
+
+
+# Multivariate Plots Section
+
+```{r Multivariate_Plots: plot map data test, echo=FALSE}
+
+# subset data for zipcode
+cNamelist <- c("cand_nm", "contbr_city", "contbr_zip", "contb_receipt_amt", "party")
+idx <- which(colnames(oh_data) %in% cNamelist)
+NewDF <- oh_data[, idx]
+head(NewDF)
+
+# Merge zipcode data with original dataset
+data(zipcode)
+NewDF$contbr_zip <- clean.zipcodes(NewDF$contbr_zip)
+NewDF <- merge(NewDF, zipcode, by.x = 'contbr_zip', by.y = 'zip')
+nrow(NewDF)
+nrow(subset(NewDF, state == "OH"))
+# Check potential error data: found 83 potential wrong zipcode data
+potential_mistake <- subset(NewDF, state != 'OH')
+nrow(potential_mistake)
+
+
+# Exclude data with wrong zipcode(outside of Ohio state)
+map<-get_map(location='ohio state', zoom=7, maptype='roadmap')
+ggmap(map)+
+  geom_point(aes(x=longitude, y=latitude, size=contb_receipt_amt, color = party), 
+             data=subset(NewDF, state == "OH"), alpha=1/50)
+
+
+```
+
+
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
+I noticed that the major cities account for more contributed amount. After visualing on the map, it shows clearly that there are a few of heat spots in Ohio. 
+
+
+### Were there any interesting or surprising interactions between features?
+After distinguishing the contributed amount by party, it shows that there are more funding going to Republican party and it refelects on voting result that Republican party won Ohio at the end.
+
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the strengths and limitations of your model.
+No. I tried to build a linear regression model between numeric and catergorical data but it failed and it seems to involve more complexing statistical library.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, Plot_One}
+r1 <- ggplot(data = New_by_city, aes(x= total_amount, y= total_votes), group = contbr_city)+
+  geom_point()+
+  geom_smooth(method = "lm", se= FALSE)+
+  ggtitle("Plot1-1. Relationship between Total Contributed Amount and Total Votes")
+
+
+r2 <- ggplot(data = New_by_city, aes(x= amount_R, y= votes_R), group = contbr_city)+
+  geom_point()+
+  geom_smooth(method = "lm", se= FALSE)+
+  ggtitle("Plot1-2. Relationship between Total Contributed Amount and Total Votes of Republican Party")
+
+
+r3 <- ggplot(data = New_by_city, aes(x= amount_D, y= votes_D), group = contbr_city)+
+  geom_point()+
+  geom_smooth(method = "lm", se= FALSE)+
+  ggtitle("Plot1-3. Relationship between Total Contributed Amount and Total Votes of Democratic party")
+
+grid.arrange(r1, r2, r3, nrow = 3)
+```
+
+### Description One
+The correlation coefficient between contributed amount and voter numbers
+1)Republican party : 0.401 (plot 1-2)
+2)Democratic party : 0.184 (plot 1-3)
+
+The correlation coefficient is higher than the correlation coefficient of total contributed amount and total voter numbers in Ohio (which is 0.307, plot 1-1)
+
+
+### Plot Two
+```{r echo=FALSE, Plot_Two}
+grid.arrange(w1, w2, nrow =2)
+
+```
+
+### Description Two
+Based on the analysis of contributed amount by weekday, it shows that there is lower contributed amount on weekend. This might cause by the reason that people tend to leave their weekend time for family. I would suggest to set some stops in the places where people love to go with their family during weekend. It might help to increase the funding rose on weekend.
+
+
+### Plot Three
+```{r echo=FALSE, Plot_Three}
+map_total <- ggmap(map)+
+  geom_point(aes(x=longitude, y=latitude, size=contb_receipt_amt), 
+             data=subset(NewDF, state == "OH"), alpha=1/150, color = "lightgreen")+
+  theme(legend.position="none")+
+  ggtitle("Plot3. Contributed amount density")+
+  guides(size=FALSE)
+
+map_party <- ggmap(map)+
+  geom_point(aes(x=longitude, y=latitude, size=contb_receipt_amt, color = party), 
+             data=subset(NewDF, state == "OH"), alpha=1/50)+ 
+  scale_colour_manual(values=c("R" = "pink", "D" = "Blue", "Other" = "gray"))+
+  theme(legend.position = "right")+
+  ggtitle("Plot3-1. Contributed amount density by party")+
+  guides(size=FALSE)
+
+grid.arrange(map_total, map_party, ncol= 2)
+
+
+```
+
+### Description Three
+It shows that the contributed money is mainly from city area such as Columbus, Cleveland, Akron and Cincinnati etc. It helps candidates to identify the cities to plan their future campaigns for raising more funding.
+
+
+I distinguish the funding for Republican party and Democratic party by color in Plot3-1. It shows that there are more funding for Republican party in Ohio and the voting result also shows that Republican party won Ohio state. 
+
+
+------
+
+# Reflection
+Before starting the analysis, I assumed that the contributed amount would be a strong indicator for election result. After analyzing the relationship between the election result of Ohio and the contributed amount data of Ohio. The correlation coefficient between these 2 factors are lower than I expected and it can't be suspected as having strong correlation between contributed amount and voter numbers.
+
+However, this is only analyzing one state. I think, for optimizing/ further analayzing, I would suggest to analyze the data of all states in the U.S. to see if there are any strong relationship between these 2 factors. 
+
+### Reference articles or links to solve problems
+[Problem while loading data: duplicate 'row.names' are not allowed error in R programming](https://stackoverflow.com/questions/8854046/duplicate-row-names-are-not-allowed-error-in-r-programming/18966905#18966905)
+
+[Why does a boxplot in ggplot requires axis x and y?](http://stackoverflow.com/questions/25049104/why-does-a-boxplot-in-ggplot-requires-axis-x-and-y)
+[What does stat means in ggplot?](https://discuss.analyticsvidhya.com/t/what-does-stat-means-in-ggplot/6579)
+[ggplot2 line chart gives “geom_path: Each group consist of only one observation. Do you need to adjust the group aesthetic?”](http://stackoverflow.com/questions/27082601/ggplot2-line-chart-gives-geom-path-each-group-consist-of-only-one-observation)
+[Find the day of a week in R](http://stackoverflow.com/questions/9216138/find-the-day-of-a-week-in-r)
+
+[Creating a Density Map in R with Zipcodes](http://www.austinwehrwein.com/digital-humanities/creating-a-density-map-in-r-with-zipcodes/)
+
+[2016_US_County_Level_Presidential_Results.csv](https://github.com/tonmcg/County_Level_Election_Results_12-16/blob/master/2016_US_County_Level_Presidential_Results.csv)
