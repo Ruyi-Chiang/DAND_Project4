@@ -1,16 +1,21 @@
-# Financial Contributions to Presidential Campaigns (Ohio State)
-Dataset: Financial Contributions to Presidential Campaigns (Ohio State)
-Time: 2016
-The reason to choose this dataset:
+# Financial Contributions to Presidential Campaigns  (Ohio State)
+Dataset: Financial Contributions to Presidential Campaigns (Ohio State)  
+Time: 2016  
+The reason to choose this dataset:  
 Ohio is known as a swing state which could forecast the election result by the status of Ohio state.
-========================================================
-#### General R library and data loading
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+#### General R library and data loading & enrichment
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r Loading Library}
 # Load all of the packages that you end up using
 # in your analysis in this code chunk.
 
 # Libraries for ploting data on the map
-#install.packages("plyr")
 #install.packages("ggmap")
 #install.packages("ggmap", type = "source")
 #install.packages("devtools")
@@ -52,9 +57,12 @@ library(stringr)
 
 library(reshape2)
 
+# Load the package for gender data
+library(gender)
+
 ```
 
-```{r  Function: Party categorize function, echo=FALSE}
+```{r  Function: Party categorize function}
 rnParty <- function(x) {
     if(is.na(x)){
       NA
@@ -75,16 +83,17 @@ rnParty <- function(x) {
              x == "Christie, Christopher J."|
              x == "Perry, James R. (Rick)"|
              x == "Pataki, George E."){
-      "R"
-    }else if(x == "Clinton, Hillary Rodham" | x == "Kaine, Tim"| x == "Lessig, Lawrence"| x == "O'Malley, Martin Joseph"){
-      "D"
+      "Republican"
+    }else if(x == "Clinton, Hillary Rodham" | x == "Kaine, Tim"| 
+             x == "Lessig, Lawrence"| x == "O'Malley, Martin Joseph"){
+      "Democratic"
     }else{
       "Other"
     }
 }
 ```
 
-```{r echo=FALSE, Load_the_Data}
+```{r Load_the_Data}
 # Load the Data
 oh_data <- read.csv(file = 'P00000001-OH.csv', row.names = NULL)
 oh_data <- subset(oh_data, select = -X)
@@ -93,64 +102,135 @@ oh_data$party <- apply(oh_data['cand_nm'],1,rnParty)
 
 oh_data_without_refund <- subset(oh_data, contb_receipt_amt > 0)
 
+
 ```
 
+```{r Enrich data}
+# Enrich with Month_Yr & Day of Month variables
+oh_data$contb_receipt_dt <- as.Date(oh_data$contb_receipt_dt, "%d-%b-%y")
+oh_data$Month_Yr <- format (as.Date(oh_data$contb_receipt_dt, "%d-%b-%y"), 
+                            "%Y-%m")
+oh_data$Month_Yr <- as.factor(oh_data$Month_Yr)
+oh_data$Day_Month <- format (as.Date(oh_data$contb_receipt_dt, "%d-%b-%y"), 
+                             "%d")
+oh_data$Day_Month <- as.numeric(oh_data$Day_Month)
+
+# Enrich with weekday variable
+oh_data$contb_receipt_dt <- as.Date(oh_data$contb_receipt_dt,"%d-%b-%y")
+oh_data$weekday <- weekdays(as.Date(oh_data$contb_receipt_dt))
+
+oh_data$weekday <- factor(oh_data$weekday, levels= c("Monday", 
+    "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+
+# Enrich with gender variable
+# Step1. add a variable of contributor's surename
+surname_split <- str_split_fixed(as.character(oh_data$contbr_nm) , ", ", 2)
+colnames(surname_split) <- c("last name", "surname")
+#surname <- surname_split[ , 2]
+#typeof(surname_split)
+#typeof(surname)
+surname_split <-as.character(surname_split[ , "surname"])
+surname <- str_split_fixed(surname_split, " ", 2)
+oh_data$surname<- surname[, 1]
+
+# Step2. 
+gender_prediction <-gender(oh_data$surname, 
+                           years = c(1897, 1997), # Voting age is 18+
+                           method = "ssa")
+gender_prediction <- gender_prediction[, c("name", "gender")]
+
+
+
+oh_data$gender <- gender_prediction[
+  match(oh_data$surname, gender_prediction$name), 
+  "gender"]
+
+```
 
 ## Univariate Plots Section
-```{r Univariate_Plots: summary of the dataset and know the length of some key attributes, echo=FALSE, message=FALSE, warning=FALSE}
+```{r Univariate_Plot summary of the dataset and know the length of some key attributes}
+cat("the total number of row in oh_data:", nrow(oh_data), "\n")
+names(oh_data)
 summary(oh_data)
-nrow(oh_data)
-# Length of key attributes
-length(unique(oh_data$cand_nm)) # unique candidate
-length(unique(oh_data$contbr_occupation))
-length(unique(oh_data$contbr_city))
+```
+
+#### By summary function to gain a general idea about the whole dataset
+From the output and the definition of variables, I could know about the types of variables and decide the next exploration step.  
+
+the total number of row in oh_data: 164475 rows
+After enrichment, there are 24 variables.
+
+The key questions I would like to anwser through this dataset are:  
+1) if there is any correlation between contributed amount and the voting result?  
+2) if there is any patterns for people donate funding? e.g. occupation, gender, city they live
+
+**Key variable: ** donation amount (contb_receipt_amt, numeric variable)  
+**other numeric variable for exploring distribution:** N/A  
+**some important non-numeric variables:** candidate names(cand_nm), gender(gender), occupation(contbr_occupation), cities (contbr_city), party(party)
+
+```{r distribution of donation amount}
+# Compute the number of classes for a histogram.
+range(oh_data$contb_receipt_amt)
+bin_number <- nclass.Sturges(oh_data$contb_receipt_amt)
+
+
+u1 <- ggplot(oh_data, aes(x = contb_receipt_amt))+
+  geom_histogram(bins = bin_number)
+
+u1
+
+# adding a vline to show the average amount
+u1 +geom_vline(aes(xintercept=mean(contb_receipt_amt, na.rm=T)), 
+               color = "red", linetype = "dashed", size = 1)
+
+u2 <- ggplot(oh_data, aes(x = log10(contb_receipt_amt)))+
+  geom_histogram(bins = bin_number)+
+  scale_x_continuous(breaks = seq(0,4,1))
+u2
 
 ```
 
-```{r Univariate_Plots: The distribution of contribution amount, echo=FALSE, message=FALSE, warning=FALSE}
-
-a <- ggplot(oh_data, aes( x = contb_receipt_amt))
-
-a + geom_histogram(binwidth = 100, boundary = 0)
+  
+#### Distribution of donation amount
+The distribution is quite spread and there are some negative numbers due to refund. For having a better view on donation amount, I used natural logarithm, log base 10, to transform my plot. With logarithm, I can see that the most common donation amount is around US$50.1 (10^1.7)
 
 
-# The distribution of contributed amount is wide and it seems to be skewed within the range of 0-500
-a + geom_histogram(binwidth = 100, boundary = 0) + # try to make a bin starting from 0
-    geom_vline(aes(xintercept=mean(contb_receipt_amt, na.rm=T)), color = "red", linetype = "dashed", size = 1) +
-    coord_cartesian(xlim = c(-100, 500)) # zooming to the area of amount from -100 to $500
+```{r Univariate_Plots: The distribution of every variable}
+# candidate distribution
 
-```
+u3 <- ggplot(oh_data, aes( x = cand_nm )) +
+  geom_bar(stat = "count") +
+  scale_x_discrete(labels = abbreviate)
 
-```{r Univariate_Plots: The number of contributions by party, echo=FALSE, message=FALSE, warning=FALSE}
-# The number of contributions by candidate
-by_party <- group_by(oh_data, party)
-by_party <- dplyr::summarise(by_party, 
-                      count = n(),
-                      total_amount = sum(contb_receipt_amt))
-by_party <- arrange(by_party, desc(total_amount))
-by_party$pos <- (cumsum(by_party$total_amount) - (0.5*by_party$total_amount))
-by_party$percent <- (by_party$total_amount / sum(by_party$total_amount))
+u3
+# occupation distribution
 
-library(scales)
-blank_theme <- theme_minimal()+
-  theme(
-  axis.title.x = element_blank(),
-  axis.title.y = element_blank(),
-  panel.border = element_blank(),
-  panel.grid=element_blank(),
-  axis.ticks = element_blank(),
-  plot.title=element_text(size=14, face="bold")
-  )
+u4 <- ggplot(oh_data, aes(x = contbr_occupation)) +
+  geom_histogram(stat = "count")+
+  scale_x_discrete(labels = abbreviate)
 
-print(by_party)
-bar <- ggplot(by_party, aes(x= reorder(party, -percent), y = percent, fill = party)) +
-  geom_bar(stat = "identity", position = "dodge")
+u4 # too many occupations to be seen on the graph
 
-bar
+by_occupation <- group_by(oh_data, contbr_occupation)
+by_occupation <- summarise(by_occupation, 
+                           num_count = n())
+by_occupation <- arrange(by_occupation, desc(num_count))
+top_15_occupation <- head(by_occupation, 15)
 
-```
+u5 <- ggplot(top_15_occupation, aes(x = reorder(contbr_occupation, -num_count), y = num_count)) +
+  geom_bar(stat ="identity")+
+  scale_x_discrete(labels = abbreviate)
 
-```{r Univariate_Plots : Top 10 cities with the most number of contributions, echo=FALSE, message=FALSE, warning=FALSE}
+u5
+
+# city distribution
+
+u6 <- ggplot(oh_data, aes(x = contbr_city)) +
+  geom_histogram(stat = "count")+
+  scale_x_discrete(labels = abbreviate)
+
+u6
+
 tab <- table(oh_data_without_refund$contbr_city)
 tab_s <- sort(tab)
 top10 <- tail(names(tab_s), 10)
@@ -160,12 +240,86 @@ d_s$contbr_city <- factor(d_s$contbr_city, levels = rev(top10))
 head(d_s$contbr_city, 15)
 
 # Top 10 cities with the most number of contributions
-g1 <- ggplot(d_s, aes(x = contbr_city)) +
+u7 <- ggplot(d_s, aes(x = contbr_city)) +
   geom_bar()+
-  theme_classic()
+  theme_classic()+
+  coord_flip()
 
-g1
+u7
 ```
+
+```{r Univariate_Plots: summary of the dataset and know the length of some key attributes}
+# Length of key attributes
+cat(length(unique(oh_data$cand_nm)), " unique candidates \n") # unique candidate
+cat(length(unique(oh_data$contbr_occupation)), "unique occupations \n")
+cat(length(unique(oh_data$contbr_city)), "unique contributed cities")
+
+```
+#### Basic idea on non-numeric variables: candidates, occupation, cities
+By plotting the bar charts and counting unique numbers of these non-numeric variables, there are too many unique data in terms of occupations and cities. It is difficult to read data from the graphs if ploting all occupations or cities so I plotted top 15 occupations and top 10 cities which contributed the most funding.
+
+In terms of candidates, there are only 24 unique candidates so I used abbreviation of each candidate's names to plot a bar chart. From the bar chart, C.HR got the most contributed amount in Ohio state.
+
+
+
+
+```{r Univariate_Plots: The distribution of contribution amount} 
+# keep it for later
+
+a <- ggplot(oh_data, aes( x = contb_receipt_amt))
+
+a + geom_histogram(binwidth = 100, boundary = 0)
+
+
+# The distribution of contributed amount is wide and it seems to be skewed within the range of 0-500
+a + geom_histogram(binwidth = 100, boundary = 0) + # try to make a bin starting from 0
+    geom_vline(aes(xintercept=mean(contb_receipt_amt, na.rm=T)), 
+               color = "red", linetype = "dashed", size = 1) +
+    coord_cartesian(xlim = c(-100, 500)) # zooming to the area of amount from -100 to $500
+
+```
+
+```{r Univariate_Plots: The number of contributions by party}
+ggplot(oh_data, aes(x = party)) +
+  geom_bar(stat = "count")
+
+
+# The number of contributed amount by party
+by_party <- group_by(oh_data, party)
+by_party <- dplyr::summarise(by_party, 
+                      count = n(),
+                      total_amount = sum(contb_receipt_amt))
+by_party <- arrange(by_party, desc(total_amount))
+by_party$pos <- (cumsum(by_party$total_amount) - (0.5*by_party$total_amount))
+by_party$percent <- (by_party$total_amount / sum(by_party$total_amount))
+
+
+bar <- ggplot(by_party, 
+              aes(x= reorder(party, -percent), 
+                  y = percent, 
+                  fill = party)) +
+  geom_bar(stat = "identity", position = "dodge")
+
+bar
+
+```
+
+#### Party distribution
+Although there are more donation records for Democratic party, there are more donated amount for Republican party. It might be caused by the average donation to Republican is higher. 
+
+
+```{r Univariate_Plots: gender distribution}
+
+# while used ggplot(oh_data, aes(x = gender)) got Error: Discrete value supplied to continuous scale all the time.
+oh_gender <- oh_data$gender # workaround
+ggplot(oh_gender, aes(x = gender)) + 
+  geom_bar(stat = "count")
+
+```
+
+  
+#### Gender distribution
+The proportion of gender is almost equal (female : male is around 5 : 5)
 
 ```{r Univariate_Plots: Top 10 cities with the most amount of contributions,echo=FALSE}
 # Top 10 cities with the most amount of contributions
@@ -176,50 +330,64 @@ city_by_amount <- arrange(city_by_amount, desc(total_amount))
 city_by_amount
 top_city <- head(city_by_amount, 10)
 top_city
-g2 <- ggplot(top_city, aes(x = reorder(contbr_city, -total_amount), y = total_amount)) +
-  geom_bar(stat = "identity")
+g2 <- ggplot(top_city, 
+             aes(x = reorder(contbr_city, -total_amount), 
+                 y= total_amount)) +
+  geom_bar(stat = "identity") +
+  coord_flip()
 
-grid.arrange(g1, g2, nrow = 2)
+grid.arrange(u7, g2, nrow = 2)
 
 ```
 
-
+  
+#### City level: donation records vs. donation amounts
+I listed top 10 cities in terms of donation records and donation amounts. Take Columbus as an example, there are the most donation records among the cities but the donation amount is not the top 1 city. It shows that some cities might have more relatively small amount of donation.
 
 # Univariate Analysis
 
 ### What is the structure of your dataset?
-There are 164,475 obs in the Ohio dataset with 18 original varibles. For analysis purpose, I added 3 extra varibles (party, Month_Yr and weekday)
+There are 164,475 obs in the Ohio dataset with 18 original varibles. For analysis purpose, I added 6 extra varibles (party, Month_Yr, weekday, day of month, surname and gender)  
 
 ### What is/are the main feature(s) of interest in your dataset?
-The main features in the data set are "contb_receipt_amt" and the factors influencing the amounts. I’d like to find out which features have the most impact on raising more contributed amounts and I'd like to provide a few suggestions for candidates in the future when running a election found-raising campaign. I suspect city, occupation and day of week matter.
+The main features in the data set are "contb_receipt_amt" and the factors influencing the amounts. I’d like to find out which features have the most impact on raising more contributed amounts and I'd like to provide a few suggestions for candidates in the future when running a election found-raising campaign. I suspect city, occupation and day of week matter.  
 
 
 ### What other features in the dataset do you think will help support your investigation into your feature(s) of interest?
-Since 2016 American presidential election result has came out, it would be great to do comparison analysis between contributed amount data and the final voting result data. I downloaded the voting result data for analyzing the correlation between contributed amount and the voters in Ohio. (The analysis is covered in the next section.)
+Since 2016 American presidential election result has came out, it would be great to do comparison analysis between contributed amount data and the final voting result data. I downloaded the voting result data for analyzing the correlation between contributed amount and the voters in Ohio. (The analysis is covered in the next section.)  
 
 ### Did you create any new variables from existing variables in the dataset?
-Yes, I create 3 variables for further analysis. The 3 variables are listed below.
-1) Party: I categorized data into 3 categories(D, R, Other) based on candidate name
-2) Month_Yr: showing the contributed amount trend by month 
-3) weekday: analyzing if there is a huge difference between weekday and wweekend.
-
+Yes, I create 3 variables for further analysis. The 3 variables are listed below.  
+1) Party: I categorized data into 3 categories(D, R, Other) based on candidate name  
+2) Month_Yr: showing the contributed amount trend by month  
+3) weekday: analyzing if there is a huge difference between weekday and weekend.  
+4) Day_Month: the day of month
+5) surname: for predicting the gender by gender library
+6) gender: the gender of the contributors
 
 ### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
-I enriched the Ohio dataset with Zipcode to visualize the contributed amount on Ohio map.(The analysis is conducted in multivariate plots section.)
+I enriched the Ohio dataset with Zipcode to visualize the contributed amount on Ohio map.(The analysis is conducted in multivariate plots section.)  
 
-After merging with Ohio zipcode data from Zipcode library, I found there are 83 potential wrong zipcode data so I excluded them when I was plotting the contributed amount on the map. The reason why I excluded is that it is hard to identify the correct zipcode simply based on city names. 
+After merging with Ohio zipcode data from Zipcode library, I found there are 83 potential wrong zipcode data so I excluded them when I was plotting the contributed amount on the map. The reason why I excluded is that it is hard to identify the correct zipcode simply based on city names.  
 
 
 # Bivariate Plots Section
 ```{r Bivariate_Plots: Coorelation matrix plot, echo=FALSE, message=FALSE, warning=FALSE}
 
+# names of columns to download data
+vote_col <- c("county_name", 
+              "votes_dem", 
+              "votes_gop", 
+              "total_votes", 
+              "state_abbr") 
+
 # Load vote data from the online source
-vote_result <- fread("https://raw.githubusercontent.com/tonmcg/County_Level_Election_Results_12-16/master/2016_US_County_Level_Presidential_Results.csv")
-oh_vote <- subset(vote_result, state_abbr == "OH")
-simple_oh_vote <- oh_vote[, c(10,2,3,4)]
+vote_result <- fread("https://raw.githubusercontent.com/tonmcg/County_Level_Election_Results_12-16/master/2016_US_County_Level_Presidential_Results.csv", select = vote_col)
+
+simple_oh_vote <- subset(vote_result,  state_abbr == "OH")
 
 # Clean Ohio vote data
-split_function <- str_split_fixed(simple_oh_vote$county_name, " ", 2)
+split_function <- str_split_fixed(simple_oh_vote$county_name, " ", 2) # take off county
 simple_oh_vote$county_name <- sapply(split_function, "[", 1)
 simple_oh_vote$county_name <- tolower(simple_oh_vote$county_name)
 
@@ -237,12 +405,21 @@ by_city.wide[is.na(by_city.wide)] <- 0
 head(by_city.wide)
 
 
-New_by_city <- merge(by_city.wide, simple_oh_vote, by.x = 'contbr_city', by.y = 'county_name')
+New_by_city <- merge(by_city.wide, simple_oh_vote, 
+                     by.x = 'contbr_city', by.y = 'county_name')
 
+colnames(New_by_city) <- c("contbr_city", 
+                           "amount_D", 
+                           "amount_Other", 
+                           "amount_R", 
+                           "votes_D",
+                           "votes_R",
+                           "total_votes",
+                           "state_abbr")
+New_by_city$total_amount <- New_by_city$amount_D + 
+  New_by_city$amount_R+ New_by_city$amount_Other
 
-colnames(New_by_city) <- c("contbr_city", "amount_D", "amount_Other", "amount_R", "votes_D","votes_R","total_votes")
-New_by_city$total_amount <- New_by_city$amount_D + New_by_city$amount_R + New_by_city$amount_Other
-head(New_by_city)
+New_by_city$state_abbr <- NULL
 
 ggpairs(New_by_city, axisLabels = 'internal',
         cardinality_threshold = length(New_by_city$contbr_city))
@@ -251,11 +428,6 @@ ggpairs(New_by_city, axisLabels = 'internal',
 
 
 ```{r Bivariate_Plots: Month v.s. Contributed amount, echo=FALSE}
-oh_data$contb_receipt_dt <- as.Date(oh_data$contb_receipt_dt, "%d-%b-%y")
-oh_data$Month_Yr <- format (as.Date(oh_data$contb_receipt_dt, "%d-%b-%y"), "%Y-%m")
-oh_data$Month_Yr <- as.factor(oh_data$Month_Yr)
-oh_data$Day_Month <- format (as.Date(oh_data$contb_receipt_dt, "%d-%b-%y"), "%d")
-oh_data$Day_Month <- as.numeric(oh_data$Day_Month)
 
 by_month <- group_by(oh_data, Month_Yr)
 by_month <- summarise(by_month, 
@@ -290,12 +462,14 @@ by_weekday_mean <- summarise(by_weekday,
 w1 <- ggplot(by_weekday_sum, aes( x = weekday, y = amount, group =1)) +
   labs(y = "Total amount")+
   geom_bar(stat = "identity")+
-  ggtitle("Sum of contributed amount by weekday")
+  ggtitle("Sum of contributed amount by weekday")+ 
+  scale_y_continuous(labels = dollar)
 
 w2 <- ggplot(by_weekday_mean, aes( x = weekday, y = amount, group =1)) +
   labs(y = "Average amount")+
   geom_bar(stat = "identity")+
-  ggtitle("Average of contributed amount by weekday")
+  ggtitle("Average of contributed amount by weekday")+ 
+  scale_y_continuous(labels = dollar)
 
 
 grid.arrange(w1, w2, nrow =2)
@@ -312,16 +486,27 @@ by_occupation_amount <- summarise(by_occupation,
 ordered_data <- arrange(by_occupation_amount, desc(count))
 top10_occupation <- head(ordered_data, 10)
 
-ggplot(top10_occupation, aes(x = reorder(contbr_occupation, -count), y = count))+
+ggplot(top10_occupation, 
+       aes(x = reorder(contbr_occupation, -count), y = count))+
   geom_bar(stat = "identity")+
-  geom_line(data = top10_occupation, aes(y = average_amount), colour = "blue", group =1 )+
+  geom_line(data = top10_occupation, aes(y = average_amount), 
+            colour = "blue", group =1 )+
   scale_y_continuous(sec.axis = sec_axis(~./400, name = "Average Amount"))
 
 
 # two plots
-p1 <- ggplot(top10_occupation, aes(x = reorder(contbr_occupation, -count), y = count)) + geom_bar(stat = "identity")  + theme_bw()
-p2 <- ggplot(top10_occupation, aes(x = reorder(contbr_occupation, -count), y = count)) +
-geom_line(data = top10_occupation, aes(y = average_amount), colour = "blue", group =1 ) + theme_bw() %+replace% 
+p1 <- ggplot(top10_occupation, 
+             aes(x = reorder(contbr_occupation, -count), y = count)) +
+  geom_bar(stat = "identity")  + theme_bw()+
+  scale_x_discrete(labels = abbreviate)+ 
+  scale_y_continuous(labels = dollar)
+p2 <- ggplot(top10_occupation, 
+             aes(x = reorder(contbr_occupation, -count), y = count)) +
+geom_line(data = top10_occupation, aes(y = average_amount), 
+          colour = "blue", group =1 ) +
+  scale_x_discrete(labels = abbreviate) + 
+  scale_y_continuous(labels = dollar) +
+  theme_bw() %+replace% 
   theme(panel.background = element_rect(fill = NA))
 
 
@@ -331,8 +516,8 @@ g2 <- ggplot_gtable(ggplot_build(p2))
 
 # overlap the panel of 2nd plot on that of 1st plot
 pp <- c(subset(g1$layout, name == "panel", se = t:r))
-g <- gtable_add_grob(g1, g2$grobs[[which(g2$layout$name == "panel")]], pp$t, 
-    pp$l, pp$b, pp$l)
+g <- gtable_add_grob(g1, g2$grobs[[which(g2$layout$name == "panel")]], 
+                     pp$t, pp$l, pp$b, pp$l)
 
 # axis tweaks
 ia <- which(g2$layout$name == "axis-l")
@@ -373,7 +558,11 @@ However, this is not a proper pair to check the relationship because these 2 fac
 ```{r Multivariate_Plots: plot map data test, echo=FALSE}
 
 # subset data for zipcode
-cNamelist <- c("cand_nm", "contbr_city", "contbr_zip", "contb_receipt_amt", "party")
+cNamelist <- c("cand_nm", 
+               "contbr_city", 
+               "contbr_zip", 
+               "contb_receipt_amt", 
+               "party")
 idx <- which(colnames(oh_data) %in% cNamelist)
 NewDF <- oh_data[, idx]
 head(NewDF)
@@ -419,22 +608,28 @@ No. I tried to build a linear regression model between numeric and catergorical 
 
 ### Plot One
 ```{r echo=FALSE, Plot_One}
-r1 <- ggplot(data = New_by_city, aes(x= total_amount, y= total_votes), group = contbr_city)+
+r1 <- ggplot(data = New_by_city, aes(x= total_amount, y= total_votes), 
+             group = contbr_city)+
   geom_point()+
   geom_smooth(method = "lm", se= FALSE)+
-  ggtitle("Plot1-1. Relationship between Total Contributed Amount and Total Votes")
+  ggtitle("Plot1-1. Relationship between Total Contributed Amount and Total Votes")+ 
+  scale_y_continuous(labels = comma)
 
 
-r2 <- ggplot(data = New_by_city, aes(x= amount_R, y= votes_R), group = contbr_city)+
+r2 <- ggplot(data = New_by_city, aes(x= amount_R, y= votes_R), 
+             group = contbr_city)+
   geom_point()+
   geom_smooth(method = "lm", se= FALSE)+
-  ggtitle("Plot1-2. Relationship between Total Contributed Amount and Total Votes of Republican Party")
+  ggtitle("Plot1-2. Relationship between Total Contributed Amount and Total Votes of Republican Party")+ 
+  scale_y_continuous(labels = comma)
 
 
-r3 <- ggplot(data = New_by_city, aes(x= amount_D, y= votes_D), group = contbr_city)+
+r3 <- ggplot(data = New_by_city, aes(x= amount_D, y= votes_D), 
+             group = contbr_city)+
   geom_point()+
   geom_smooth(method = "lm", se= FALSE)+
-  ggtitle("Plot1-3. Relationship between Total Contributed Amount and Total Votes of Democratic party")
+  ggtitle("Plot1-3. Relationship between Total Contributed Amount and Total Votes of Democratic party")+ 
+  scale_y_continuous(labels = comma)
 
 grid.arrange(r1, r2, r3, nrow = 3)
 ```
@@ -461,15 +656,17 @@ Based on the analysis of contributed amount by weekday, it shows that there is l
 ```{r echo=FALSE, Plot_Three}
 map_total <- ggmap(map)+
   geom_point(aes(x=longitude, y=latitude, size=contb_receipt_amt), 
-             data=subset(NewDF, state == "OH"), alpha=1/150, color = "lightgreen")+
+             data=subset(NewDF, state == "OH"), alpha=1/150, 
+             color = "lightgreen")+
   theme(legend.position="none")+
   ggtitle("Plot3. Contributed amount density")+
   guides(size=FALSE)
 
 map_party <- ggmap(map)+
-  geom_point(aes(x=longitude, y=latitude, size=contb_receipt_amt, color = party), 
+  geom_point(aes(x=longitude, y=latitude, size=contb_receipt_amt, 
+                 color = party), 
              data=subset(NewDF, state == "OH"), alpha=1/50)+ 
-  scale_colour_manual(values=c("R" = "pink", "D" = "Blue", "Other" = "gray"))+
+  scale_colour_manual(values=c("Republican" = "pink", "Democrat" = "Blue", "Other" = "gray"))+
   theme(legend.position = "right")+
   ggtitle("Plot3-1. Contributed amount density by party")+
   guides(size=FALSE)
@@ -493,7 +690,14 @@ Before starting the analysis, I assumed that the contributed amount would be a s
 
 However, this is only analyzing one state. I think, for optimizing/ further analayzing, I would suggest to analyze the data of all states in the U.S. to see if there are any strong relationship between these 2 factors. 
 
+During the analysis, I was quite struggling with more than 6,000 occupations which I thought there might be some insights to br cracked. It would be better if there are some default options for people to choose while they are making donation, such as "Retired", "Public Servant", "Military Soldiers" or "Teachers" etc. I could cross-check with each party's party platform to see if party platform have any impact on donation amounts by occupation.   
+
+  
 ### Reference articles or links to solve problems
+[ggplot2 axis ticks : A guide to customize tick marks and labels](http://www.sthda.com/english/wiki/ggplot2-axis-ticks-a-guide-to-customize-tick-marks-and-labels)
+
+[Compute the number of classes for a histogram.](https://stat.ethz.ch/R-manual/R-devel/library/grDevices/html/nclass.html)
+
 [Problem while loading data: duplicate 'row.names' are not allowed error in R programming](https://stackoverflow.com/questions/8854046/duplicate-row-names-are-not-allowed-error-in-r-programming/18966905#18966905)
 
 [Why does a boxplot in ggplot requires axis x and y?](http://stackoverflow.com/questions/25049104/why-does-a-boxplot-in-ggplot-requires-axis-x-and-y)
