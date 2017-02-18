@@ -1,4 +1,5 @@
-# Financial Contributions to Presidential Campaigns  (Ohio State)
+# Financial Contributions to Presidential Campaigns  
+####(Ohio State)
 **Dataset:** Financial Contributions to Presidential Campaigns (Ohio State)  
 **Time:** 2016  
 **The reason to choose this dataset:**    
@@ -66,7 +67,7 @@ library(corrplot)
 
 ```
 
-```{r  Function: Party categorize function}
+```{r  Function: Party categorize function and Get_legend function}
 rnParty <- function(x) {
     if(is.na(x)){
       NA
@@ -95,6 +96,15 @@ rnParty <- function(x) {
       "Other"
     }
 }
+
+get_legend <- function(myggplot){
+  tmp <- ggplot_gtable(ggplot_build(myggplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+
 ```
 
 ```{r Load_the_Data}
@@ -173,7 +183,11 @@ The key questions I would like to anwser through this dataset are:
 **Key variable: ** donation amount (contb_receipt_amt, numeric variable)  
 **other numeric variable for exploring distribution:** N/A  
 **some important non-numeric variables:** candidate names(cand_nm), gender(gender), occupation(contbr_occupation), cities (contbr_city), party(party)
+  
 
+#### Distribution of donation amount
+The distribution is quite spread and there are some negative numbers due to refund. For having a better view on donation amount, I used natural logarithm, log base 10, to transform my plot. With logarithm, I can see that the most common donation amount is around US\$50.1 (10^1.7) - US\$75(10^1.87)
+  
 ```{r distribution of donation amount}
 # Compute the number of classes for a histogram.
 cat("Donated amount range: ", range(oh_data$contb_receipt_amt))
@@ -185,15 +199,19 @@ u1 <- ggplot(oh_data, aes(x = contb_receipt_amt))+
 
 u1
 
-# adding a vline to show the average amount
-u1 +geom_vline(aes(xintercept=mean(contb_receipt_amt, na.rm=T)), 
-               color = "red", linetype = "dashed", size = 1)
+# The distribution of contributed amount is wide and it seems to be skewed within the range of 0-500
+ggplot(oh_data, aes(x = contb_receipt_amt)) +
+  geom_histogram(binwidth = 10, boundary = 0) + # try to make a bin starting from 0
+  geom_vline(aes(xintercept=mean(contb_receipt_amt, na.rm=T)), 
+             color = "red", linetype = "dashed", size = 1) +
+  coord_cartesian(xlim = c(-100, 500)) # zooming to the area of amount from -100 to $500
+
 ```
-  
+   
 #### Logarithm transfermation of donation amount on the base of 10
 I am using log base 10 for monetary amounts, because orders of ten seem natural for money: \$100, \$1000,\$10,000, and so on. The transformed data is easy to read.
 
-
+  
 ```{r log_amount_distribution, cache=TRUE, cache.path = 'cache/', fig.path='figure/'}
 
 u2 <- ggplot(oh_data, aes(x = contb_receipt_amt))+
@@ -204,63 +222,7 @@ u2
 ```
 
   
-#### Distribution of donation amount
-The distribution is quite spread and there are some negative numbers due to refund. For having a better view on donation amount, I used natural logarithm, log base 10, to transform my plot. With logarithm, I can see that the most common donation amount is around US\$50.1 (10^1.7) - US\$75(10^1.87)
-
-
-```{r Univariate_Plots: The distribution of every variable}
-# candidate distribution
-
-u3 <- ggplot(oh_data, aes( x = cand_nm )) +
-  geom_bar(stat = "count") +
-  scale_x_discrete(labels = abbreviate)
-
-u3
-# occupation distribution
-
-u4 <- ggplot(oh_data, aes(x = contbr_occupation)) +
-  geom_histogram(stat = "count")+
-  scale_x_discrete(labels = abbreviate)
-
-u4 # too many occupations to be seen on the graph
-
-by_occupation <- group_by(oh_data, contbr_occupation)
-by_occupation <- summarise(by_occupation, 
-                           num_count = n())
-by_occupation <- arrange(by_occupation, desc(num_count))
-top_15_occupation <- head(by_occupation, 15)
-
-u5 <- ggplot(top_15_occupation, aes(x = reorder(contbr_occupation, -num_count), y = num_count)) +
-  geom_bar(stat ="identity")+
-  scale_x_discrete(labels = abbreviate)
-
-u5
-
-# city distribution
-
-u6 <- ggplot(oh_data, aes(x = contbr_city)) +
-  geom_histogram(stat = "count")+
-  scale_x_discrete(labels = abbreviate)
-
-u6
-
-tab <- table(oh_data_without_refund$contbr_city)
-tab_s <- sort(tab)
-top10 <- tail(names(tab_s), 10)
-d_s <- subset(oh_data, contbr_city %in% top10 )
-head(d_s$contbr_city, 15)
-d_s$contbr_city <- factor(d_s$contbr_city, levels = rev(top10))
-head(d_s$contbr_city, 15)
-
-# Top 10 cities with the most number of contributions
-u7 <- ggplot(d_s, aes(x = contbr_city)) +
-  geom_bar()+
-  theme_classic()+
-  coord_flip()
-
-u7
-```
-
+#### Basic idea on non-numeric variables: candidates, occupation, cities  
 ```{r Univariate_Plots: summary of the dataset and know the length of some key attributes}
 # Length of key attributes
 cat(length(unique(oh_data$cand_nm)), " unique candidates \n") # unique candidate
@@ -268,27 +230,71 @@ cat(length(unique(oh_data$contbr_occupation)), "unique occupations \n")
 cat(length(unique(oh_data$contbr_city)), "unique contributed cities")
 
 ```
-#### Basic idea on non-numeric variables: candidates, occupation, cities
+
+  
 By plotting the bar charts and counting unique numbers of these non-numeric variables, there are too many unique data in terms of occupations and cities. It is difficult to read data from the graphs if ploting all occupations or cities so I plotted top 15 occupations and top 10 cities which contributed the most funding.
 
-In terms of candidates, there are only 24 unique candidates so I used abbreviation of each candidate's names to plot a bar chart. From the bar chart, C.HR got the most contributed amount in Ohio state.
+In terms of candidates, there are only 24 unique candidates so I used horizontal bar chart to show the full name of candidates. From the bar chart, Hiliary Clinton, Bernard Sanders and Donald Trump got the most contributed amount in Ohio state.  
+
+Regarding to occupations, retired people contributed the most donation in Ohio. For city distribution, Columbas, Cincinnati and Clevenland are the top 3 cities to sponsor the election campaigns.
+  
+```{r Univariate_Plots: The distribution of every variable}
+# candidate distribution
+
+u3 <- ggplot(oh_data, aes( x = cand_nm )) +
+  geom_bar(stat = "count") +
+  coord_flip()
+
+u3
+# occupation distribution
+# too many occupations to be seen on the graph
+
+by_occupation <- group_by(oh_data, contbr_occupation)
+by_occupation <- summarise(by_occupation, 
+                           num_count = n())
+by_occupation <- arrange(by_occupation, desc(num_count))
+top_15_occupation <- head(by_occupation, 15)
+
+u5 <- ggplot(top_15_occupation, aes(x = reorder(contbr_occupation, num_count), y = num_count)) +
+  geom_bar(stat ="identity")+
+  scale_x_discrete()+
+  xlab("Occupations")+
+  coord_flip()
+
+u5
+
+# city distribution
+# too many cities to be seen on the graph
+tab <- table(oh_data_without_refund$contbr_city)
+tab_s <- sort(tab)
+top10 <- tail(names(tab_s), 10)
+d_s_top_city <- subset(oh_data, contbr_city %in% top10 )
+d_s_top_city$contbr_city <- factor(d_s_top_city$contbr_city, levels = rev(top10))
+head(d_s_top_city)
+
+# Top 10 cities with the most number of contributions
+u7 <- ggplot(d_s_top_city, aes(x = contbr_city)) +
+  geom_bar()+
+  theme_classic()+
+  coord_flip()
+
+u7
+```
 
 
+#### Month distribution
+The election was on Nov. in 2016 but the donation started from March 2015 and reached the first peak on March 2016. The donation reached the highest peak on October 2016.
 
 
 ```{r Univariate_Plots: The distribution of contribution amount} 
 # keep it for later
 
-a <- ggplot(oh_data, aes( x = contb_receipt_amt))
+a <- ggplot(oh_data, aes( x = Month_Yr))
 
-a + geom_histogram(binwidth = 100, boundary = 0)
+a + geom_histogram(stat = "count")+
+  theme(axis.text.x = element_text(angle=60, hjust=1))
 
 
-# The distribution of contributed amount is wide and it seems to be skewed within the range of 0-500
-a + geom_histogram(binwidth = 100, boundary = 0) + # try to make a bin starting from 0
-    geom_vline(aes(xintercept=mean(contb_receipt_amt, na.rm=T)), 
-               color = "red", linetype = "dashed", size = 1) +
-    coord_cartesian(xlim = c(-100, 500)) # zooming to the area of amount from -100 to $500
 
 ```
   
@@ -371,7 +377,11 @@ After merging with Ohio zipcode data from Zipcode library, I found there are 83 
 
 # Bivariate Plots Section
 #### First assumption: more donation amount means more votes  
-Since the 2016 election result already came out, I am starting to enrich the original political finance dataset with vote data.  
+Since the 2016 election result already came out, I enriched the original political finance dataset with vote data, which I found online[(link)]("https://raw.githubusercontent.com/tonmcg/County_Level_Election_Results_12-16/master/2016_US_County_Level_Presidential_Results.csv"). Since I only analyzed Ohio data, I picked out the Ohio voter data from the national vote data by using subset and mapped with my original contribution amount data by city name. (which in the vote data, the column called "county_name")
+
+Regarding to the mapping, there are different format of city names. There is "county" at the end of each city name in vote data so I have to trim the word of "county". The cases of letter in these 2 data frames are different as well. To properly map the data, I chang the cases of letter by the function of "tolower".
+
+
 
 ```{r Bivariate_Plots: Coorelation matrix plot, echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -638,9 +648,9 @@ grid.draw(g)
   
 #### Checking the contribution by cities
 
-During the election period, candidates need to travel around the cities to win supports. Using the heat map would provide a clear visualization on where the most supportive cities in terms of donation amount.  
+During the election period, candidates need to travel around the cities to win supports. Using the heat map would provide a clear visualization on where the most supportive cities in terms of donation amount. I enriched the original dataset with zipcode data to plot a heatmap afterwards.  
 
-```{r Multivariate_Plots: plot map data test, echo=FALSE}
+```{r Merging zipcode data with original dataset, echo=FALSE}
 
 # subset data for zipcode
 cNamelist <- c("cand_nm", 
@@ -676,17 +686,52 @@ ggmap(map)+
   labels = c("Democratic", "Other", "Republican"),
   values = c("red", "grey", "blue")) +
   theme(legend.position = "bottom") +
-  guides(size=FALSE)
+  guides(size=FALSE, colour = guide_legend(override.aes = list(alpha = 1)))
 
 
 ```
 
+#### Checking the contribution by cities
 
+Checking the relation between time and donation amount in top 10 cities, I could see an intersting fact that the donation amount supporting Democratic party skewwed in 2016. On the other hand, the donation to Republican party skewwed in 2015. Cincinnati and Cleveland, the two cities with the most donation amount, have the most obviouse trend.  
+
+```{r Multivariate_Plots: donation_by_month_by_party, echo=FALSE, cache=TRUE, cache.path = 'cache/', fig.path='figure/'}
+
+# 1. Plot charts
+top1 <- ggplot(subset(d_s_top_city, party == "Democratic"), 
+               aes(x=Month_Yr, y=contb_receipt_amt, group= contbr_city))+
+  geom_line(aes(color = contbr_city), stat = "summary", fun.y=sum)+
+  scale_y_continuous(labels = dollar_format("US$"))+
+  theme(axis.text.x = element_text(angle=60, hjust=1))+
+  ggtitle("Month-Year vs. Donation Amount(Democratic)")+
+  theme(legend.position="bottom")
+  
+
+top2 <- ggplot(subset(d_s_top_city, party == "Republican"), 
+               aes(x=Month_Yr, y=contb_receipt_amt, group= contbr_city))+
+  geom_line(aes(color = contbr_city), stat = "summary", fun.y=sum)+
+  scale_y_continuous(labels = dollar_format("US$"))+
+  theme(axis.text.x = element_text(angle=60, hjust=1))+
+  ggtitle("Month-Year vs. Donation Amount(Republican)")+
+  theme(legend.position="none")
+
+# 2. Save the legend
+legend <- get_legend(top1)
+# 3. Remove the legend from the box plot
+top1 <- top1 + theme(legend.position="none")
+
+grid.arrange(top1, top2, legend, nrow = 3, heights = c(8,8,2))
+
+
+
+```
 
 # Multivariate Analysis
 
 ### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
-I noticed that the major cities account for more contributed amount. After visualing on the map, it shows clearly that there are a few of heat spots in Ohio. 
+I noticed that the major cities account for more contributed amount. After visualing on the map, it shows clearly that there are a few of heat spots in Ohio.  
+
+Checking the relation between time and donation amount in top 10 cities, I could see an intersting fact that the donation amount supporting Democratic party skewwed in 2016. On the other hand, the donation to Republican party skewwed in 2015. Cincinnati and Cleveland, the two cities with the most donation amount, have the most obviouse trend.
 
 
 ### Were there any interesting or surprising interactions between features?
@@ -702,37 +747,14 @@ No. I tried to build a linear regression model between numeric and catergorical 
 
 ### Plot One
 ```{r echo=FALSE, Plot_One}
-corrplot(N, method="number", is.corr=FALSE)
-
-
-r1 <- ggplot(data = New_by_city, aes(x= total_amount, y= total_votes), 
-             group = contbr_city)+
-  geom_point()+
-  geom_smooth(method = "lm", se= FALSE)+
-  ggtitle("Plot1-1. Relationship between Total Contributed Amount and Total Votes")+ 
-  scale_y_continuous(labels = comma)
-
-
-r2 <- ggplot(data = New_by_city, aes(x= amount_R, y= votes_R), 
-             group = contbr_city)+
-  geom_point()+
-  geom_smooth(method = "lm", se= FALSE)+
-  ggtitle("Plot1-2. Relationship: Contributed Amount vs. Votes of Republican Party")+ 
-  scale_y_continuous(labels = comma)
-
-
-r3 <- ggplot(data = New_by_city, aes(x= amount_D, y= votes_D), 
-             group = contbr_city)+
-  geom_point()+
-  geom_smooth(method = "lm", se= FALSE)+
-  ggtitle("Plot1-3. Relationship: Contributed Amount vs. Votes of Democratic party")+ 
-  scale_y_continuous(labels = comma)
 
 grid.arrange(r1, r2, r3, nrow = 3)
 ```
 
 ### Description One
-The correlation between donation amount and votes is not as strong as I expected.  
+The correlation between donation amount and votes is not as strong as I expected.
+From the previous exploration, I found there are a lote of cities skewwed together, So I tried to exclude outliers by limiting x-axis and y-axis to focus on the bulk data. The slope for Plot1-2 (Republican party data) is slightly steeper than Plot1-3(Democratic party).
+
 A minor finding might be that the correlation between donation amount and votes is stronger for Republican supporters (the correlation corefficient: 0.4)  
   
 The correlation coefficient between contributed amount and voter numbers for 2 parties.  
@@ -744,16 +766,19 @@ The correlation coefficient is higher than the correlation coefficient of total 
 
 ### Plot Two
 ```{r echo=FALSE, Plot_Two}
-grid.arrange(w1, w2, nrow =2)
+grid.arrange(top1, top2, legend, nrow = 3, heights = c(8,8,2))
 
 ```
 
 ### Description Two
-Based on the analysis of contributed amount by weekday, it shows that there is lower contributed amount on weekend. This might cause by the reason that people tend to leave their weekend time for family. I would suggest to set some stops in the places where people love to go with their family during weekend. It might help to increase the funding rose on weekend.
+Based on the previous exploration of contributed amount by weekday, it shows that there is lower contributed amount on weekend. The weekday finding is somewhat telling about weekday vs weekend habits but this might be expected. So I diveed into looking at contribution amounts on a broader time scale.  
 
+Checking the relation between time and donation amount in top 10 cities, I could see an intersting fact that the donation amount supporting Democratic party skewwed in 2016. On the other hand, the donation to Republican party skewwed in 2015. Cincinnati and Cleveland, the two cities with the most donation amount, have the most obviouse trend.  
+
+My guess is that the different distrinution might be caused by the party platform annoucements of each party or the campaign tour plan. I think the donation amount should be boosted everytime when a party's candidate engages with citizen in a city.   
 
 ### Plot Three
-```{r echo=FALSE, Plot_Three}
+```{r Plot_Three, echo=FALSE, cache=TRUE, cache.path = 'cache/', fig.path='figure/'}
 map_total <- ggmap(map)+
   geom_point(aes(x=longitude, y=latitude, size=contb_receipt_amt), 
              data=subset(NewDF, state == "OH"), alpha=1/150, 
@@ -766,10 +791,10 @@ map_party <- ggmap(map)+
   geom_point(aes(x=longitude, y=latitude, size=contb_receipt_amt, 
                  color = party), 
              data=subset(NewDF, state == "OH"), alpha=1/50)+ 
-  scale_colour_manual(values=c("Republican" = "pink", "Democrat" = "blue", "Other" = "grey"))+
+  scale_colour_manual(values=c("Republican" = "pink", "Democratic" = "blue", "Other" = "grey"))+
   theme(legend.position = "right")+
   ggtitle("Plot3-1. Amount density by party")+
-  guides(size=FALSE)
+  guides(size=FALSE, colour = guide_legend(override.aes = list(alpha = 1)))
 
 grid.arrange(map_total, map_party, ncol= 2)
 
